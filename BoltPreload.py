@@ -16,7 +16,7 @@
 #You should have received a copy of the GNU General Public License
 #along with this program.  If not, see http://www.gnu.org/licenses/.
 
-print ("""BoltPreload.py Calculator  Copyright (C) 2022  BracketDesigner
+print ("""\nBoltPreload.py Calculator  Copyright (C) 2022  BracketDesigner
 This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
 This is free software, and you are welcome to redistribute it
 under certain conditions; type `show c' for details.\n""")
@@ -54,7 +54,15 @@ EngagementLength = input("EngagementLength (in): ")
 
 def IdentifyThread(thread, isExternal=True, EngagementLength=None):
     # Assuming Unified National Thread Series
+
+    # Replace explicitely defined numbers:
+    HoleLookup = {"#0": .06, "#1": .073, "#2": .086, "#3": .099, "#4": .112, "#5": .125, "#6": .128, "#8": .164, "#10": .19, "#12": .126}
+    for i in HoleLookup.keys():
+        if i in thread:
+            thread = thread.replace(i, str(HoleLookup[i]))
+
     threadsplit = thread.replace(" ","-").split("-")
+
     MajorDiamStr = threadsplit[0]
     if "/" in MajorDiamStr:
         MajorDiam = float(MajorDiamStr.split("/")[0]) / float(MajorDiamStr.split("/")[1])
@@ -126,29 +134,41 @@ def IdentifyThread(thread, isExternal=True, EngagementLength=None):
         MajorDiam = float(MajorDiam)
         TPI = float(TPI)
 
-    if "1a" in thread or "1b" in thread:
+    ClassFinder = " ".join(threadsplit[2:])
+
+    if "1" in ClassFinder:
         Class = 1
-    elif "2a" in thread or "2b" in thread:
+    elif "2" in ClassFinder:
         Class = 2
-    elif "3a" in thread or "3b" in thread:
+    elif "3" in ClassFinder:
         Class = 3
-    elif "4a" in thread or "4b" in thread:
+    elif "4" in ClassFinder:
         Class = 4
-    elif "5a" in thread or "5b" in thread:
+    elif "5" in ClassFinder:
         Class = 5
     else:
         Class = 2 # Assume Class 2, standard
+
+    if isExternal: # Assume from input, default is external
+        ThreadSide = "A"
+    else:
+        ThreadSide = "B"
+
+    # Check for R and J thread callouts
+    if "r" in thread.lower() and ThreadSide == "A": # No UNR spec for Internal threads
+        ThreadDensity = ThreadDensity.replace("UN","UNR")
+    elif "j" in thread.lower() and Class >= 2:
+        ThreadDensity = ThreadDensity.replace("UN","UNJ")
+    elif "j" in thread.lower() and Class == 1:
+        print("UNJ not compatable with Class 1 thread")
+
 
     #if "a" in thread.lower(): #External
     #    ThreadSide = "A"
     #elif "b" in thread.lower(): #Internal
     #    ThreadSide = "B"
     #else:
-    if isExternal: # Assume from input, default is external
-        ThreadSide = "A"
-    else:
-        ThreadSide = "B"
-    
+
 
     # Thread Allowance Calc
     BasicPitchDiam = MajorDiam - 0.64952 / TPI
@@ -156,6 +176,8 @@ def IdentifyThread(thread, isExternal=True, EngagementLength=None):
 
     EngagementLength = BasicMajorDiam # For tolerance calc, applicable up to 1.5 Major diams) 
     Class2APitchDiamTolerance = 0.0015*BasicMajorDiam**(1/3) + 0.0015*EngagementLength**(1/2) + 0.015 * (1/TPI)**(2/3)
+
+    MaxRootRadius = None
 
     if ThreadSide == "A": # External Thread (bolt)
         BasicMinorDiam = BasicMajorDiam - 3*3**(1/2)/(4*TPI)
@@ -180,8 +202,28 @@ def IdentifyThread(thread, isExternal=True, EngagementLength=None):
         MinMajorDiam = MaxMajorDiam - MajorDiamTolerance
         MaxPitchDiam = BasicPitchDiam - Allowance
         MinPitchDiam = MaxPitchDiam - PitchDiamTolerance
-        MaxMinorDiam = BasicMinorDiam + Allowance #Note the minor diameter are slightly off from refrences
-        MinMinorDiam = MaxMinorDiam - MinorDiamTolerance
+        if "R" in ThreadDensity:
+            if Class <= 2:
+                MaxMinorDiam = BasicMinorDiam - Allowance - .10825318 * (1/TPI)
+            else:
+                MaxMinorDiam = BasicMinorDiam - .10825318 * (1/TPI)
+            MaxRootRadius = .18042196 * (1/TPI)
+            MinMinorDiam = MinPitchDiam - .64951905 * (1/TPI)
+        elif "J" in ThreadDensity:
+            if Class == 2:
+                MaxMinorDiam = BasicPitchDiam - Allowance - .50518 * (1/TPI)
+                MinMinorDiam = BasicPitchDiam - 1.3 * Class2APitchDiamTolerance - .5658 * (1/TPI)
+            elif Class == 3:
+                MaxMinorDiam = BasicPitchDiam - .50518 * (1/TPI)
+                MinMinorDiam = BasicPitchDiam - .75 * Class2APitchDiamTolerance - .5658 * (1/TPI)
+            MaxRootRadius = .15011107 * (1/TPI)
+        else:
+            MaxMinorDiam = BasicMinorDiam + Allowance #Note the minor diameter are slightly off from refrences
+            MinMinorDiam = MaxMinorDiam - MinorDiamTolerance
+
+        MinMinorDiamRounding1 = 4
+        MinMinorDiamRounding2 = 4
+        MaxMinorDiamRounding = 4
 
     elif ThreadSide == "B": # Internal thread (nut)
         BasicMinorDiam = MajorDiam - 1.08253175 * (1/TPI)
@@ -224,9 +266,25 @@ def IdentifyThread(thread, isExternal=True, EngagementLength=None):
         MinMinorDiam = BasicMinorDiam + Allowance #Note the minor diameter are slightly off from refrences
         MaxMinorDiam = MinMinorDiam + MinorDiamTolerance
 
+        if "J" in ThreadDensity:
+            MinMinorDiam = MinMajorDiam - .97427858 * (1/TPI)
 
-        
-    #print("Minor Diam Tol: " + str(MinorDiamTolerance))
+        if MajorDiam < .1380:
+            MinMinorDiamRounding1 = 4
+            MinMinorDiamRounding2 = 4
+            MaxMinorDiamRounding = 4
+        elif Class == 1 or Class == 2:
+            MinMinorDiamRounding1 = 3
+            MinMinorDiamRounding2 = 3
+            MaxMinorDiamRounding = 3
+        elif Class == 3 and "J" in ThreadDensity:
+            MinMinorDiamRounding1 = 4
+            MinMinorDiamRounding2 = 4
+            MaxMinorDiamRounding = 4
+        else:
+            MinMinorDiamRounding1 = 3
+            MinMinorDiamRounding2 = 4
+            MaxMinorDiamRounding = 4
 
     BasicMajorDiam = round(BasicMajorDiam,4)
     MaxMajorDiam = round(MaxMajorDiam,4)
@@ -235,13 +293,19 @@ def IdentifyThread(thread, isExternal=True, EngagementLength=None):
     MaxPitchDiam = round(MaxPitchDiam,4)
     MinPitchDiam = round(MinPitchDiam,4)
     BasicMinorDiam = round(BasicMinorDiam,4)
-    MaxMinorDiam = round(MaxMinorDiam,4)
-    MinMinorDiam = round(MinMinorDiam,4)
+    MaxMinorDiam = round(MaxMinorDiam, MaxMinorDiamRounding)
+    MinMinorDiam = round(MinMinorDiam, MinMinorDiamRounding1)
 
     print("\nThread Callout: " + str(MajorDiam) + "-" + str(TPI) + " " + ThreadDensity + " " + str(Class) + ThreadSide) 
-    print("Major: " + str(MaxMajorDiam) + "/" + str(MinMajorDiam))
-    print("Pitch: " + str(MaxPitchDiam) + "/" + str(MinPitchDiam))
-    print("Minor: " + str(MaxMinorDiam) + "/" + str(MinMinorDiam) + "\n")
+    print("Major: " + format(MaxMajorDiam, ".4f") + "/" + format(MinMajorDiam, ".4f"))
+    print("Pitch: " + format(MaxPitchDiam, ".4f") + "/" + format(MinPitchDiam, ".4f"))
+    print("Minor: " + format(MaxMinorDiam, ".4f") + "/" + format(MinMinorDiam, "." + str(MinMinorDiamRounding2) + "f"))
+    if ThreadSide == "A":
+        print("Note: Minor diameter tolerances for refrence only")
+    if MaxRootRadius is not None:
+        print("Note: Maximum root radius: " + str(round(MaxRootRadius,4)))
+
+    print("\n")
     #print("Allowance: " + str(Allowance))
             
 
@@ -275,13 +339,13 @@ def IdentifyMaterial(material):
         return None
 
 BoltTensileArea, BoltMaxMinorDiam, BoltMinPitchDiam, BoltEngagementLength, BoltTPI, BoltMaxPitchDiam, BoltMinMajorDiam = IdentifyThread(BoltThread, isExternal=True)
-if BulkThread is not "":
+if BulkThread != "":
     BulkTensileArea, BulkMaxMinorDiam, BulkMinPitchDiam, BulkEngagementLength, BulkTPI, BulkMaxPitchDiam, BulkMinMajorDiam = IdentifyThread(BulkThread, isExternal=False)
 else:
     BulkTensileArea, BulkMaxMinorDiam, BulkMinPitchDiam, BulkEngagementLength, BulkTPI, BulkMaxPitchDiam, BulkMinMajorDiam = IdentifyThread(BoltThread, isExternal=False)
 
 BoltYieldStrength = IdentifyMaterial(BoltMaterial)
-if BulkMaterial is not "":
+if BulkMaterial != "":
     BulkYieldStrength = IdentifyMaterial(BulkMaterial)
 else:
     BulkYieldStrength = IdentifyMaterial(BoltMaterial)
